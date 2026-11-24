@@ -4,10 +4,19 @@ const path = require("path");
 const fs = require("fs");
 const db = require("../../db/conexion");
 const { verificarToken } = require("../middlewares/autenticacion");
-
-const dirArchivos = path.join(__dirname, "..", "..", "archivos");
-const MAX_MOD = 500 * 1024 * 1024;
-const MAX_IMAGEN = 5 * 1024 * 1024;
+const {
+    dirArchivos,
+    MAX_MOD,
+    MAX_IMAGEN,
+    nombreUnico,
+    esImagen,
+    puedeBorrar,
+    limpiarEtiquetas,
+    etiquetasValidas,
+    asignarEtiquetas,
+    actualizarEtiquetas,
+    borrarEtiquetasSinUso,
+} = require("./funciones");
 
 router.use(
     fileUpload({
@@ -17,19 +26,6 @@ router.use(
         responseOnLimit: "El archivo supera el tamaño máximo permitido",
     })
 );
-
-function nombreUnico(archivo, campo) {
-    const ext = archivo.name.split(".").pop();
-    return `${Date.now()}-${campo}.${ext}`;
-}
-
-function esImagen(archivo) {
-    return archivo.mimetype.startsWith("image/");
-}
-
-function puedeBorrar(usuario, mod) {
-    return usuario.rol === "admin" || mod.id_usuario === usuario.id;
-}
 
 router.get("/", (req, res, next) => {
     db.query("SELECT * FROM mod_")
@@ -259,167 +255,7 @@ router.delete("/:id", verificarToken, async (req, res, next) => {
     }
 });
 
-//--------------------------------
-
-router.get("/:id/imagenes", (req, res, next) => {
-    const { id } = req.params;
-
-    db.query("SELECT * FROM imagen WHERE id_mod = ?", [id])
-        .then(([imagenes]) => {
-            res.status(200).json({ imagenes });
-        })
-        .catch((error) => {
-            console.log(error);
-            res.status(500).json({ error });
-        });
-});
-
-router.post("/:id/imagenes", verificarToken, async (req, res, next) => {
-    const { id } = req.params;
-    const files = req.files || {};
-
-    if (!files.imagenes) {
-        return res.status(400).json({ error: "Falta el campo imagenes" });
-    }
-
-    const subidas = [].concat(files.imagenes);
-
-    if (!subidas.every((img) => esImagen(img) && img.size <= MAX_IMAGEN)) {
-        return res.status(400).json({
-            error: "Todas las imágenes deben ser archivos de imagen de hasta 5 MB",
-        });
-    }
-
-    try {
-        const [mods] = await db.query("SELECT id_usuario FROM mod_ WHERE id_mod = ?", [id]);
-        if (mods.length === 0) {
-            return res.status(404).json({ error: "Mod no encontrado" });
-        }
-        if (mods[0].id_usuario !== req.usuario.id) {
-            return res.status(403).json({ error: "Solo el dueño puede agregar imágenes" });
-        }
-
-        for (let i = 0; i < subidas.length; i++) {
-            const nombre = nombreUnico(subidas[i], `galeria${i}`);
-            await subidas[i].mv(path.join(dirArchivos, "galeria", nombre));
-            await db.query("INSERT INTO imagen (ruta, id_mod) VALUES (?, ?)", [
-                `galeria/${nombre}`,
-                id,
-            ]);
-        }
-
-        res.status(201).json({ mensaje: "Imágenes agregadas", cantidad: subidas.length });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ error });
-    }
-});
-
-router.delete("/:id/imagenes/:idImagen", verificarToken, async (req, res, next) => {
-    const { id, idImagen } = req.params;
-
-    try {
-        const [mods] = await db.query("SELECT id_usuario FROM mod_ WHERE id_mod = ?", [id]);
-        if (mods.length === 0) {
-            return res.status(404).json({ error: "Mod no encontrado" });
-        }
-        if (mods[0].id_usuario !== req.usuario.id) {
-            return res.status(403).json({ error: "Solo el dueño puede borrar imágenes" });
-        }
-
-        const [imagenes] = await db.query(
-            "SELECT * FROM imagen WHERE id_imagen = ? AND id_mod = ?",
-            [idImagen, id]
-        );
-        if (imagenes.length === 0) {
-            return res.status(404).json({ error: "Imagen no encontrada" });
-        }
-
-        await db.query("DELETE FROM imagen WHERE id_imagen = ?", [idImagen]);
-        fs.unlink(path.join(dirArchivos, imagenes[0].ruta), () => { });
-
-        res.status(200).json({ mensaje: "Imagen eliminada" });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({ error });
-    }
-});
-
-//-----------------------------------------
-const MAX_ETIQUETA = 50;
-
-function limpiarEtiquetas(texto) {
-    if (!texto) return [];
-    const lista = texto
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter((e) => e !== "");
-    return [...new Set(lista)];
-}
-
-function etiquetasValidas(lista) {
-    return lista.every(
-        (e) => e.length <= MAX_ETIQUETA && /^[a-z0-9áéíóúüñ -]+$/.test(e)
-    );
-}
-
-async function asignarEtiquetas(idMod, lista) {
-    for (const nombre of lista) {
-        await db.query("INSERT IGNORE INTO etiqueta (nombre) VALUES (?)", [nombre]);
-        const [filas] = await db.query(
-            "SELECT id_etiqueta FROM etiqueta WHERE nombre = ?",
-            [nombre]
-        );
-        await db.query(
-            "INSERT IGNORE INTO mod_etiqueta (id_mod, id_etiqueta) VALUES (?, ?)",
-            [idMod, filas[0].id_etiqueta]
-        );
-    }
-}
-
-async function actualizarEtiquetas(idMod, nuevas) {
-    const [actuales] = await db.query(
-        `SELECT e.id_etiqueta, e.nombre
-     FROM mod_etiqueta me
-     JOIN etiqueta e ON e.id_etiqueta = me.id_etiqueta
-     WHERE me.id_mod = ?`,
-        [idMod]
-    );
-
-    for (const actual of actuales) {
-        if (!nuevas.includes(actual.nombre)) {
-            await db.query(
-                "DELETE FROM mod_etiqueta WHERE id_mod = ? AND id_etiqueta = ?",
-                [idMod, actual.id_etiqueta]
-            );
-        }
-    }
-
-    await asignarEtiquetas(idMod, nuevas);
-}
-
-function borrarEtiquetasSinUso() {
-    return db.query(
-        "DELETE FROM etiqueta WHERE id_etiqueta NOT IN (SELECT id_etiqueta FROM mod_etiqueta)"
-    );
-}
-
-router.get("/:id/etiquetas", (req, res, next) => {
-  const { id } = req.params;
-
-  const sql = `SELECT e.id_etiqueta, e.nombre
-    FROM etiqueta e
-    JOIN mod_etiqueta me ON me.id_etiqueta = e.id_etiqueta
-    WHERE me.id_mod = ?`;
-
-  db.query(sql, [id])
-    .then(([etiquetas]) => {
-      res.status(200).json({ etiquetas });
-    })
-    .catch((error) => {
-      console.log(error);
-      res.status(500).json({ error });
-    });
-});
+router.use("/:id/imagenes", require("./imagenes"));
+router.use("/:id/etiquetas", require("./etiquetas"));
 
 module.exports = router;
