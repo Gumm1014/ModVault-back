@@ -62,4 +62,20 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
+router.get("/:id", (req, res) => {
+  const { id } = req.params;
+
+  db.query("SELECT id_usuario, nombre FROM usuario WHERE id_usuario = ?", [id])
+    .then(([usuarios]) => {
+      if (usuarios.length === 0) {
+        return res.status(404).json({ error: "Usuario no encontrado" });
+      }
+      res.status(200).json({ usuario: usuarios[0] });
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(500).json({ error });
+    });
+});
+
 module.exports = router;

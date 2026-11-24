@@ -3,6 +3,7 @@ const fileUpload = require("express-fileupload");
 const path = require("path");
 const db = require("../../db/conexion");
 const fs = require("fs");
+const { verificarToken, soloAdmin } = require("../middlewares/autenticacion");
 
 const dirImagenes = path.join(__dirname, "..", "..", "archivos", "imagenes");
 
@@ -52,7 +53,7 @@ router.get("/:id", (req, res, next) => {
 });
 
 
-router.post("/", (req, res, next) => {
+router.post("/", verificarToken, soloAdmin, (req, res, next) => {
   const { nombre } = req.body;
   const files = req.files;
 
@@ -79,12 +80,13 @@ router.post("/", (req, res, next) => {
   )
     .then(() => {
       const sql =
-        "INSERT INTO juego (nombre, portada, encabezado, icono) VALUES (?, ?, ?, ?)";
+        "INSERT INTO juego (nombre, portada, encabezado, icono, id_usuario) VALUES (?, ?, ?, ?, ?)";
       return db.query(sql, [
         nombre,
         `imagenes/${nombres.portada}`,
         `imagenes/${nombres.encabezado}`,
         `imagenes/${nombres.icono}`,
+        req.usuario.id,
       ]);
     })
     .then(([result]) => {
@@ -96,7 +98,7 @@ router.post("/", (req, res, next) => {
     });
 });
 
-router.put("/:id", async (req, res, next) => {
+router.put("/:id", verificarToken, soloAdmin, async (req, res, next) => {
   const { id } = req.params;
   const { nombre } = req.body || {};
   const files = req.files || {};
