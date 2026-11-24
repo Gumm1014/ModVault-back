@@ -257,5 +257,7 @@ router.delete("/:id", verificarToken, async (req, res, next) => {
 
 router.use("/:id/imagenes", require("./imagenes"));
 router.use("/:id/etiquetas", require("./etiquetas"));
+router.use("/:id/like", require("./like"));
+router.use("/:id/descargar", require("./descargar"));
 
 module.exports = router;
