@@ -27,8 +27,17 @@ router.use(
     })
 );
 
+
 router.get("/", (req, res, next) => {
-    db.query("SELECT * FROM mod_")
+    const sql = `SELECT m.id_mod, m.nombre, m.descripcion_corta, m.likes, m.descargas,
+      m.id_categoria, m.id_juego,
+      j.nombre AS nombre_juego,
+      (SELECT i.ruta FROM imagen i WHERE i.id_mod = m.id_mod
+       ORDER BY i.id_imagen LIMIT 1) AS imagen
+    FROM mod_ m
+    JOIN juego j ON j.id_juego = m.id_juego`;
+
+    db.query(sql)
         .then(([mods]) => {
             res.status(200).json({ mods });
         })
@@ -38,20 +47,25 @@ router.get("/", (req, res, next) => {
         });
 });
 
-router.get("/:id", (req, res, next) => {
-    const { id } = req.params;
+router.get("/:id", (req, res) => {
+  const { id } = req.params;
 
-    db.query("SELECT * FROM mod_ WHERE id_mod = ?", [id])
-        .then(([mods]) => {
-            if (mods.length === 0) {
-                return res.status(404).json({ error: "Mod no encontrado" });
-            }
-            res.status(200).json({ mod: mods[0] });
-        })
-        .catch((error) => {
-            console.log(error);
-            res.status(500).json({ error });
-        });
+  const sql = `SELECT m.*, u.nombre AS nombre_usuario
+    FROM mod_ m
+    JOIN usuario u ON u.id_usuario = m.id_usuario
+    WHERE m.id_mod = ?`;
+
+  db.query(sql, [id])
+    .then(([mods]) => {
+      if (mods.length === 0) {
+        return res.status(404).json({ error: "Mod no encontrado" });
+      }
+      res.status(200).json({ mod: mods[0] });
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(500).json({ error });
+    });
 });
 
 router.post("/", verificarToken, async (req, res, next) => {
