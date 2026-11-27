@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const db = require("../../db/conexion");
 const { hashPass, verificarPass, crearToken } = require("./funciones");
+const { verificarToken } = require("../middlewares/autenticacion");
 
 router.post("/registro", (req, res, next) => {
   const { nombre, correo, contrasena } = req.body || {};
@@ -55,22 +56,54 @@ router.post("/login", async (req, res, next) => {
     }
 
     const token = crearToken(usuario);
-    res.status(200).json({ token });
+    res.status(200).json({
+      token,
+      usuario: {
+        id_usuario: usuario.id_usuario,
+        nombre: usuario.nombre,
+        rol: usuario.rol,
+      },
+    });
   } catch (error) {
     console.log(error);
     res.status(500).json({ error });
   }
 });
 
-router.get("/:id", (req, res) => {
-  const { id } = req.params;
+router.get("/mis-mods", verificarToken, (req, res) => {
+  const sql = `SELECT m.id_mod, m.nombre, m.descripcion_corta, m.likes, m.descargas,
+      m.id_categoria, m.id_juego,
+      j.nombre AS nombre_juego,
+      (SELECT i.ruta FROM imagen i WHERE i.id_mod = m.id_mod
+       ORDER BY i.id_imagen LIMIT 1) AS imagen
+    FROM mod_ m
+    JOIN juego j ON j.id_juego = m.id_juego
+    WHERE m.id_usuario = ?`;
 
-  db.query("SELECT id_usuario, nombre FROM usuario WHERE id_usuario = ?", [id])
-    .then(([usuarios]) => {
-      if (usuarios.length === 0) {
-        return res.status(404).json({ error: "Usuario no encontrado" });
-      }
-      res.status(200).json({ usuario: usuarios[0] });
+  db.query(sql, [req.usuario.id])
+    .then(([mods]) => {
+      res.status(200).json({ mods });
+    })
+    .catch((error) => {
+      console.log(error);
+      res.status(500).json({ error });
+    });
+});
+
+router.get("/mis-descargas", verificarToken, (req, res) => {
+  const sql = `SELECT m.id_mod, m.nombre, m.descripcion_corta, m.likes, m.descargas,
+      m.id_categoria, m.id_juego,
+      j.nombre AS nombre_juego,
+      (SELECT i.ruta FROM imagen i WHERE i.id_mod = m.id_mod
+       ORDER BY i.id_imagen LIMIT 1) AS imagen
+    FROM descargas d
+    JOIN mod_ m ON m.id_mod = d.id_mod
+    JOIN juego j ON j.id_juego = m.id_juego
+    WHERE d.id_usuario = ?`;
+
+  db.query(sql, [req.usuario.id])
+    .then(([mods]) => {
+      res.status(200).json({ mods });
     })
     .catch((error) => {
       console.log(error);
