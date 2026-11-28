@@ -59,6 +59,57 @@ router.post("/", verificarToken, async (req, res, next) => {
   }
 });
 
+router.put("/:idImagen", verificarToken, async (req, res) => {
+  const { id, idImagen } = req.params;
+  const files = req.files || {};
+
+  if (!files.imagen) {
+    return res.status(400).json({ error: "Falta el campo imagen" });
+  }
+
+  if (!esImagen(files.imagen) || files.imagen.size > MAX_IMAGEN) {
+    return res.status(400).json({ error: "Debe ser una imagen de hasta 5 MB" });
+  }
+
+  let nuevoNombre;
+
+  try {
+    const [mods] = await db.query("SELECT id_usuario FROM mod_ WHERE id_mod = ?", [id]);
+    if (mods.length === 0) {
+      return res.status(404).json({ error: "Mod no encontrado" });
+    }
+    if (mods[0].id_usuario !== req.usuario.id) {
+      return res.status(403).json({ error: "Solo el dueño puede editar imágenes" });
+    }
+
+    const [imagenes] = await db.query(
+      "SELECT * FROM imagen WHERE id_imagen = ? AND id_mod = ?",
+      [idImagen, id]
+    );
+    if (imagenes.length === 0) {
+      return res.status(404).json({ error: "Imagen no encontrada" });
+    }
+
+    nuevoNombre = nombreUnico(files.imagen, "galeria");
+    await files.imagen.mv(path.join(dirArchivos, "galeria", nuevoNombre));
+
+    await db.query("UPDATE imagen SET ruta = ? WHERE id_imagen = ?", [
+      `galeria/${nuevoNombre}`,
+      idImagen,
+    ]);
+
+    fs.unlink(path.join(dirArchivos, imagenes[0].ruta), () => {});
+
+    res.status(200).json({ mensaje: "Imagen actualizada" });
+  } catch (error) {
+    if (nuevoNombre) {
+      fs.unlink(path.join(dirArchivos, "galeria", nuevoNombre), () => {});
+    }
+    console.log(error);
+    res.status(500).json({ error });
+  }
+});
+
 router.delete("/:idImagen", verificarToken, async (req, res, next) => {
   const { id, idImagen } = req.params;
 
